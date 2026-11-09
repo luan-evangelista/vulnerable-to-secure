@@ -1,0 +1,72 @@
+name: Security
+
+# Scans both versions with the same pipeline.
+# The "before" job is EXPECTED to fail: it is marked continue-on-error so the
+# workflow stays green while the failed job shows exactly what was caught.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: ${{ matrix.target == 'before' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [before, after]
+    steps:
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch kit rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: luan-evangelista/pipeline-security-kit
+          path: .security-kit
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ matrix.target }}/go.mod
+          cache-dependency-path: ${{ matrix.target }}/go.sum
+
+      - name: Tests
+        working-directory: ${{ matrix.target }}
+        run: go test -v ./...
+
+      - name: Install Semgrep
+        if: always()
+        run: python3 -m pip install --user semgrep==1.184.0
+      - name: Code (Semgrep, registry + kit rules)
+        if: always()
+        run: |
+          semgrep scan --config p/golang --config .security-kit/rules \
+            --metrics off --severity ERROR --error ${{ matrix.target }}
+
+      - name: Dependencies and Dockerfile (Trivy)
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.target }}
+          scanners: vuln,misconfig
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+      - name: Known vulnerabilities reachable from the code (govulncheck)
+        if: always()
+        working-directory: ${{ matrix.target }}
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          "$(go env GOPATH)/bin/govulncheck" ./...

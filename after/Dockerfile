@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # FIX 8: multi-stage build, pinned versions, minimal non-root runtime.
 
-FROM golang:1.24-bookworm AS build
+FROM golang:1.26-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

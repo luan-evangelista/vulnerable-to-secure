@@ -1,6 +1,8 @@
 module github.com/luan-evangelista/vulnerable-to-secure/before
 
-go 1.24
+go 1.26
+
+toolchain go1.26.10
 
 require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
